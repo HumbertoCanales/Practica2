@@ -3,11 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\Comment;
+use App\Post;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator;
 
 class CommentController extends Controller
 {
-    public function all()
+    public function all(Request $request)
     {
         if($request->user()->tokenCan('admin:admin')){
             $comments = Comment::all();
@@ -18,7 +20,7 @@ class CommentController extends Controller
         }
     }
 
-    public function allPC()
+    public function allPC(Request $request)
     {
         if($request->user()->tokenCan('admin:admin')){
             $posts = Post::all();
@@ -33,11 +35,12 @@ class CommentController extends Controller
         }
     }
 
-    public function allFromPost(Post $post)
+    public function allFromPost(int $post)
     {
-        if($request->user()->tokenCan('admin:admin')){
-            $comments = Post::find($post['id'])->comments;
-            if($post==null){
+        $post_sel = Post::find($post);
+        if($post_sel){
+            $comments = $post_sel->comments;
+        }else{
                 return response()->json(['message' => "The post you are looking for doesn't exists.",
                                           'code' => 404], 404);
             }
@@ -47,59 +50,69 @@ class CommentController extends Controller
                 return response()->json(['message' => "This post doesn't have any comments.",
                                           'code' => 200], 200);
             }
-        }else{
-            return response()->json(['message' => "Unauthorized",
-                                      'code' => 401], 401);
-        }
     }
 
-    public function store(Request $request, Post $post)
+    public function show(Request $request, int $comment)
     {
-        if($request->user()->tokenCan('admin:admin')){
-            $validator = Validator::make($request->all(),[
-                'author' => 'required|min:1|max:30',
-                'content' => 'required|min:1|max:255'
-            ]);
-            $errors = $validator->errors();
-            
-            if($validator->fails()){
-                return response()->json($errors, 400);
-            }else{
-                $comment = Comment::create(
-                    ['post' => $post['id'],
-                    'content' => $request['content'],
-                    'author' => $request['author']
-                    ]);
-                return response()->json($comment, 201);
-            }
-        }else{
-            return response()->json(['message' => "Unauthorized",
-                                      'code' => 401], 401);
-        }
-    }
-
-    public function show(Post $post, $id)
-    {
-        if($request->user()->tokenCan('admin:admin')){
-            $comment = Comment::find($id);
-            if($comment){
-                return response()->json($comment, 200);
+            $comment_sel = Comment::find($comment);
+            if($comment_sel){
+                return response()->json($comment_sel, 200);
             }else{
                 return response()->json(['message' => "The comment you are looking for doesn't exists.",
                                         'code' => 404], 404);
             }
+    }
+    
+    public function showFromPost(Request $request, int $post, int $comment)
+    {
+            $post_sel = Post::find($post);
+            if(!$post_sel){
+                return response()->json(['message' => "The post you are looking for doesn't exists.",
+                                        'code' => 404], 404);
+            }
+            $comment_sel = Comment::find($comment);
+            if(!$comment_sel){
+                return response()->json(['message' => "The comment you are looking for doesn't exists.",
+                                        'code' => 404], 404);
+            }
+            if($comment_sel['post_id']!=$post_sel->id){
+                return response()->json(['message' => "This comment doesn't belong to this post.",
+                                        'code' => 422], 422);
+            }
+            return response()->json($comment_sel, 200);
+            
+    } 
+    
+    public function store(Request $request, int $post)
+    {
+        $sel_post = Post::find($post);
+        if($sel_post){
+            if($request->user()->tokenCan('admin:admin') || $request->user()->tokenCan('com:publish')){
+                $request->validate([
+                    'content' => 'required|min:1|max:255'
+                ]);
+                $comment = Comment::create(
+                        ['post_id' => $sel_post->id,
+                         'content' => $request['content'],
+                         'user_id' => $request->user()->id]);
+                return response()->json($comment, 201);
+            }else{
+                return response()->json(['message' => "Unauthorized",
+                                          'code' => 401], 401);
+            }
         }else{
-            return response()->json(['message' => "Unauthorized",
-                                      'code' => 401], 401);
+            return response()->json(['message' => "The post you want to comment on doesn't exists.",
+                                     'code' => 400], 400);
         }
-    }   
+    }
 
     public function update(Request $request, Post $post, $id)
     {
-        if($request->user()->tokenCan('admin:admin')){
-            if(Comment::find($id)){
+        $comment = Comment::find($id);
+        if($comment){
+            if($request->user()->tokenCan('admin:admin')
+            || $request->user()->tokenCan('com:edit') && $comment->user_id == $request->user()->id){
                 $validator = Validator::make($request->all(), [
-                    'author' => 'required|min:1|max:30',
                     'content' => 'required|min:1|max:255'
                 ]);
                 $errors = $validator->errors();
@@ -108,26 +121,24 @@ class CommentController extends Controller
                     return response()->json($errors, 400);
                 }else{
                     Comment::find($id) -> update(
-                        ['content' => $request['content'],
-                        'author' => $request['author']
-                        ]);
+                        ['content' => $request['content']]);
                     $comment = Comment::find($id);
                     return response()->json($comment, 201);
                 }
             }else{
-                return response()->json(['message' => "The comment you wanted to update doesn't exists.",
-                                          'code' => 400], 400);
+                return response()->json(['message' => "Unauthorized",
+                                      'code' => 401], 401);
             }
         }else{
-            return response()->json(['message' => "Unauthorized",
-                                      'code' => 401], 401);
+                return response()->json(['message' => "The comment you wanted to update doesn't exists.",
+                                         'code' => 400], 400);
         }
     }
 
-    public function destroyAll()
+    public function destroyAll(Request $request)
     {
         if($request->user()->tokenCan('admin:admin')){
-            Comment::all()->delete();
+            Comment::truncate();
             return response()->json(['message' => "All the comments have been deleted succesfully.", 'code' => 200], 200);
         }else{
             return response()->json(['message' => "Unauthorized",
@@ -135,11 +146,12 @@ class CommentController extends Controller
         }
     }
 
-    public function destroyFromPost(Post $post)
+    public function destroyFromPost(Request $request, int $post)
     {
         if($request->user()->tokenCan('admin:admin')){
-            $comments = Post::find($post)->comments->delete();
-            if($comments){
+            $post_sel = Post::find($post);
+            if($post_sel){
+                $comments = $post_sel->comments->destroy();
                 return response()->json(['message' => "All the comments from the post '".$post['id']."' have been deleted succesfully.", 
                                             'code' => 200], 200);
             }else{
@@ -152,20 +164,22 @@ class CommentController extends Controller
         }
     }
 
-    public function destroy(Post $post, $id)
+    public function destroy(Request $request, Post $post, $id)
     {
-        if($request->user()->tokenCan('admin:admin')){
-            $comment = Comment::find($id);
-            if($comment){
+        $comment = Comment::find($id);
+        if($comment){
+            if($request->user()->tokenCan('admin:admin')
+            || $request->user()->tokenCan('com:edit') && $comment->user_id == $request->user()->id){
                 Comment::destroy($id);
-                return response()->json("The comment with the id '".$id."' has been deleted succesfully.", 200);
+                return response()->json(['message' => "The comment with the id '".$id."' has been deleted succesfully.",
+                                     'code' => 200], 200);
             }else{
-                return response()->json(['message' => "The comment you wanted to delete doesn't exists.",
-                                          'code' => 400], 400);
+                return response()->json(['message' => "Unauthorized",
+                                      'code' => 401], 401);
             }
         }else{
-            return response()->json(['message' => "Unauthorized",
-                                      'code' => 401], 401);
+            return response()->json(['message' => "The comment you wanted to delete doesn't exists.",
+                                     'code' => 400], 400);
         }
     }
 }

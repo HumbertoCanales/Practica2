@@ -9,6 +9,7 @@ class AbilitySeeder extends Seeder
     {
         Ability::create(['name' => 'admin:admin']);
         Ability::create(['name' => 'user:list']);
+        Ability::create(['name' => 'user:profile']);
         Ability::create(['name' => 'post:publish']);
         Ability::create(['name' => 'post:edit']);
         Ability::create(['name' => 'post:delete']);

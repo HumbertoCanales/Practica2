@@ -24,6 +24,9 @@ class AuthController extends Controller
             'age' => $request->age,
             'password' => Hash::make($request->password)]);
         if($user){
+            $user->abilities()->attach(Ability::where('name','user:profile')->first());
+            $user->abilities()->attach(Ability::where('name','post:publish')->first());
+            $user->abilities()->attach(Ability::where('name','com:publish')->first());
             return response()->json($user, 201);
         }
         return abort(400, "Something went wrong...");
@@ -40,12 +43,10 @@ class AuthController extends Controller
                 'email' => ['The provided credentials are incorrect.'],
             ]);
         }
-        $ab_array[] = 'user:profile';
         $abilities = $user->abilities;
         foreach ($abilities as $ability){
             $ab_array[] = $ability->name;
         }
-        //dd($ab_array);
         $token = $user->createToken($request->email, $ab_array)->plainTextToken;
         return response()->json(['token' => $token],201);
     }
@@ -65,10 +66,27 @@ class AuthController extends Controller
         }
     }
 
-    public function grantAbi(Request $request, $user){
+    public function showAbi(Request $request, int $user)
+    {
         if($request->user()->tokenCan('admin:admin')){
-            $selected_user = User::find($user);
-        if($selected_user){
+            $user_sel = User::find($user);
+            if($user_sel){
+                $abilities = $user_sel->abilities;
+                return response()->json($abilities, 200);
+            }else{
+                return response()->json(['message' => "The user you are looking for doesn't exists.",
+                                      'code' => 404], 404);
+            }
+        }else{
+            return response()->json(['message' => "Unauthorized",
+                                      'code' => 401], 401);
+        }
+    }
+
+    public function grantAbi(Request $request, int $user){
+        if($request->user()->tokenCan('admin:admin')){
+            $user_sel = User::find($user);
+        if($user_sel){
             $request -> validate([
                 'ability_name' => 'required'
             ]);
@@ -77,10 +95,10 @@ class AuthController extends Controller
                 return response()->json(['message' => "This ability doesn't exists.",
                                         'code' => 200],200);
             }
-            if($selected_user){
-                $rep_ability = $selected_user->abilities->where('name', $ability)->first();
+            if($user_sel){
+                $rep_ability = $user_sel->abilities->where('name', $ability)->first();
                 if(!$rep_ability){
-                    $selected_user->abilities()->attach(Ability::where('name', $ability)->first());
+                    $user_sel->abilities()->attach(Ability::where('name', $ability)->first());
                     return response()->json(['message' => $ability." ability granted to the user ".$user,
                                         'code' => 200],200);
                 }
